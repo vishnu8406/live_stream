@@ -7,12 +7,12 @@
 </head>
 <body>
   <h2>Camera Receiver</h2>
-  <video id="remoteVideo" autoplay playsinline></video>
+  <video id="remoteVideo" autoplay playsinline style="width: 100%; border: 2px solid black;"></video>
 
   <script>
     console.log("Receiver page loaded");
 
-    // 🔹 Your Firebase config
+    // 🔹 Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyBbOZTdTJWhqApJGDeep5gSRXHUbMOZ8_E",
       authDomain: "live-stream-b4723.firebaseapp.com",
@@ -30,29 +30,42 @@
     async function init() {
       const remoteVideo = document.getElementById("remoteVideo");
 
+      console.log("📡 Creating PeerConnection...");
       const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
 
       pc.ontrack = event => {
+        console.log("🎥 Remote track received:", event.streams);
         remoteVideo.srcObject = event.streams[0];
       };
 
-      // 🔹 Ask for Call ID
+      // Ask for Call ID
       const callId = prompt("Enter Call ID from Sender:");
+      console.log("👉 Call ID entered:", callId);
+
       const callDoc = db.collection("calls").doc(callId);
       const offerCandidates = callDoc.collection("offerCandidates");
       const answerCandidates = callDoc.collection("answerCandidates");
 
       pc.onicecandidate = event => {
         if (event.candidate) {
+          console.log("📨 Sending ICE candidate to Firestore...");
           answerCandidates.add(event.candidate.toJSON());
         }
       };
 
+      console.log("📄 Fetching call data from Firestore...");
       const callData = (await callDoc.get()).data();
 
-      const offerDescription = callData.offer;
-      await pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
+      if (!callData) {
+        console.error("❌ No such Call ID found in Firestore!");
+        alert("Invalid Call ID");
+        return;
+      }
 
+      console.log("✅ Offer received:", callData.offer);
+      await pc.setRemoteDescription(new RTCSessionDescription(callData.offer));
+
+      console.log("⚙️ Creating Answer...");
       const answerDescription = await pc.createAnswer();
       await pc.setLocalDescription(answerDescription);
 
@@ -61,12 +74,15 @@
         sdp: answerDescription.sdp,
       };
 
+      console.log("📨 Writing answer to Firestore...");
       await callDoc.update({ answer });
 
+      console.log("👂 Listening for offer ICE candidates...");
       offerCandidates.onSnapshot(snapshot => {
         snapshot.docChanges().forEach(change => {
           if (change.type === "added") {
             let data = change.doc.data();
+            console.log("📥 New ICE candidate from sender:", data);
             pc.addIceCandidate(new RTCIceCandidate(data));
           }
         });
