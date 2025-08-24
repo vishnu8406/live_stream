@@ -37,6 +37,13 @@ const firebaseConfig = {
     { urls: "stun:stun.l.google.com:19302" }
   ]
 });
+pc.onconnectionstatechange = () => {
+  console.log("Connection state:", pc.connectionState);
+};
+
+pc.oniceconnectionstatechange = () => {
+  console.log("ICE state:", pc.iceConnectionState);
+};
 
 
     // Display incoming video
