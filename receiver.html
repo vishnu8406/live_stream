@@ -6,11 +6,13 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
-  <h2>Camera Receiver</h2>
-  <video id="remoteVideo" autoplay playsinline style="width: 100%; border: 2px solid black;"></video>
+  <h2>💻 Camera Receiver</h2>
+  <input id="callId" placeholder="Enter Call ID" style="width:250px; padding:5px;">
+  <button onclick="init()">Start</button>
+  <video id="remoteVideo" autoplay playsinline style="width:100%; border:2px solid blue;"></video>
 
   <script>
-    console.log("Receiver page loaded");
+    console.log("💻 Receiver page loaded");
 
     // 🔹 Firebase config
     const firebaseConfig = {
@@ -28,19 +30,20 @@
     const db = firebase.firestore();
 
     async function init() {
+      const callId = document.getElementById("callId").value.trim();
+      if (!callId) {
+        alert("⚠️ Please enter a Call ID");
+        return;
+      }
+      console.log("📡 Receiver connecting with Call ID:", callId);
+
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
       const remoteVideo = document.getElementById("remoteVideo");
 
-      console.log("📡 Creating PeerConnection...");
-      const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
-
       pc.ontrack = event => {
-        console.log("🎥 Remote track received:", event.streams);
+        console.log("🎥 Remote stream received");
         remoteVideo.srcObject = event.streams[0];
       };
-
-      // Ask for Call ID
-      const callId = prompt("Enter Call ID from Sender:");
-      console.log("👉 Call ID entered:", callId);
 
       const callDoc = db.collection("calls").doc(callId);
       const offerCandidates = callDoc.collection("offerCandidates");
@@ -48,24 +51,21 @@
 
       pc.onicecandidate = event => {
         if (event.candidate) {
-          console.log("📨 Sending ICE candidate to Firestore...");
+          console.log("📨 Receiver ICE candidate sent");
           answerCandidates.add(event.candidate.toJSON());
         }
       };
 
-      console.log("📄 Fetching call data from Firestore...");
       const callData = (await callDoc.get()).data();
-
       if (!callData) {
-        console.error("❌ No such Call ID found in Firestore!");
-        alert("Invalid Call ID");
+        alert("❌ Invalid Call ID");
         return;
       }
 
-      console.log("✅ Offer received:", callData.offer);
-      await pc.setRemoteDescription(new RTCSessionDescription(callData.offer));
+      console.log("✅ Offer received");
+      const offerDescription = callData.offer;
+      await pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
 
-      console.log("⚙️ Creating Answer...");
       const answerDescription = await pc.createAnswer();
       await pc.setLocalDescription(answerDescription);
 
@@ -74,22 +74,19 @@
         sdp: answerDescription.sdp,
       };
 
-      console.log("📨 Writing answer to Firestore...");
       await callDoc.update({ answer });
+      console.log("✅ Answer stored");
 
-      console.log("👂 Listening for offer ICE candidates...");
       offerCandidates.onSnapshot(snapshot => {
         snapshot.docChanges().forEach(change => {
           if (change.type === "added") {
-            let data = change.doc.data();
-            console.log("📥 New ICE candidate from sender:", data);
-            pc.addIceCandidate(new RTCIceCandidate(data));
+            console.log("📥 Sender ICE candidate received");
+            const candidate = new RTCIceCandidate(change.doc.data());
+            pc.addIceCandidate(candidate);
           }
         });
       });
     }
-
-    init();
   </script>
 </body>
 </html>
