@@ -2,6 +2,8 @@
 <html>
 <head>
   <title>Camera Sender</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
   <h2>Camera Sender</h2>
@@ -10,31 +12,69 @@
   <script>
     console.log("Sender page loaded");
 
+    // 🔹 Your Firebase config here
+    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyBbOZTdTJWhqApJGDeep5gSRXHUbMOZ8_E",
+  authDomain: "live-stream-b4723.firebaseapp.com",
+  databaseURL: "https://live-stream-b4723-default-rtdb.firebaseio.com",
+  projectId: "live-stream-b4723",
+  storageBucket: "live-stream-b4723.firebasestorage.app",
+  messagingSenderId: "924150539091",
+  appId: "1:924150539091:web:e4b23806165e39b3f437a6",
+  measurementId: "G-QYJ816DFZH"
+};
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
     async function init() {
-      try {
-        const video = document.getElementById("video");
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        video.srcObject = stream;
+      const localVideo = document.getElementById("video");
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      localVideo.srcObject = stream;
 
-        let pc = new RTCPeerConnection({
-          iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      const callDoc = db.collection("calls").doc();
+      const offerCandidates = callDoc.collection("offerCandidates");
+      const answerCandidates = callDoc.collection("answerCandidates");
+
+      pc.onicecandidate = event => {
+        if (event.candidate) {
+          offerCandidates.add(event.candidate.toJSON());
+        }
+      };
+
+      const offerDescription = await pc.createOffer();
+      await pc.setLocalDescription(offerDescription);
+
+      const offer = {
+        sdp: offerDescription.sdp,
+        type: offerDescription.type,
+      };
+
+      await callDoc.set({ offer });
+      console.log("Sender: Offer written to Firestore, call ID:", callDoc.id);
+      alert("Share this Call ID with Receiver: " + callDoc.id);
+
+      callDoc.onSnapshot(snapshot => {
+        const data = snapshot.data();
+        if (!pc.currentRemoteDescription && data?.answer) {
+          const answerDescription = new RTCSessionDescription(data.answer);
+          pc.setRemoteDescription(answerDescription);
+          console.log("Sender: Answer received");
+        }
+      });
+
+      answerCandidates.onSnapshot(snapshot => {
+        snapshot.docChanges().forEach(change => {
+          if (change.type === "added") {
+            const candidate = new RTCIceCandidate(change.doc.data());
+            pc.addIceCandidate(candidate);
+          }
         });
-
-        // Debugging
-        pc.onconnectionstatechange = () => {
-          console.log("Sender connection state:", pc.connectionState);
-        };
-        pc.oniceconnectionstatechange = () => {
-          console.log("Sender ICE state:", pc.iceConnectionState);
-        };
-
-        stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-        // Normally signaling code with Firebase goes here
-        console.log("Sender ready. Now open Receiver.");
-      } catch (err) {
-        console.error("Error in sender:", err);
-      }
+      });
     }
 
     init();
