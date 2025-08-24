@@ -19,11 +19,12 @@ const firebaseConfig = {
   authDomain: "live-stream-b4723.firebaseapp.com",
   databaseURL: "https://live-stream-b4723-default-rtdb.firebaseio.com",
   projectId: "live-stream-b4723",
-  storageBucket: "live-stream-b4723.firebasestorage.app",
+  storageBucket: "live-stream-b4723.appspot.com",  // ✅ fixed
   messagingSenderId: "924150539091",
   appId: "1:924150539091:web:e4b23806165e39b3f437a6",
   measurementId: "G-QYJ816DFZH"
 };
+
 
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
