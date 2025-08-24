@@ -6,17 +6,15 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
-  <h2>📱 Camera Sender</h2>
+  <h2>📱 Camera Sender (Auto)</h2>
   <video id="video" autoplay playsinline style="width:100%; border:2px solid black;"></video>
 
   <script>
     console.log("📡 Sender page loaded");
 
-    // 🔹 Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyBbOZTdTJWhqApJGDeep5gSRXHUbMOZ8_E",
       authDomain: "live-stream-b4723.firebaseapp.com",
-      databaseURL: "https://live-stream-b4723-default-rtdb.firebaseio.com",
       projectId: "live-stream-b4723",
       storageBucket: "live-stream-b4723.appspot.com",
       messagingSenderId: "924150539091",
@@ -41,40 +39,31 @@
       const answerCandidates = callDoc.collection("answerCandidates");
 
       pc.onicecandidate = event => {
-        if (event.candidate) {
-          console.log("📨 Sender ICE candidate sent");
-          offerCandidates.add(event.candidate.toJSON());
-        }
+        if (event.candidate) offerCandidates.add(event.candidate.toJSON());
       };
 
-      console.log("⚙️ Creating offer...");
       const offerDescription = await pc.createOffer();
       await pc.setLocalDescription(offerDescription);
 
-      const offer = {
-        sdp: offerDescription.sdp,
-        type: offerDescription.type,
-      };
-
+      const offer = { sdp: offerDescription.sdp, type: offerDescription.type };
       await callDoc.set({ offer });
       console.log("✅ Offer stored with Call ID:", callDoc.id);
-      alert("📢 Share this Call ID with Receiver:\n" + callDoc.id);
+
+      // Update a "currentCall" doc so receiver can find it automatically
+      await db.collection("currentCall").doc("active").set({ callId: callDoc.id });
 
       callDoc.onSnapshot(snapshot => {
         const data = snapshot.data();
         if (!pc.currentRemoteDescription && data?.answer) {
+          pc.setRemoteDescription(new RTCSessionDescription(data.answer));
           console.log("📥 Answer received from receiver");
-          const answerDescription = new RTCSessionDescription(data.answer);
-          pc.setRemoteDescription(answerDescription);
         }
       });
 
       answerCandidates.onSnapshot(snapshot => {
         snapshot.docChanges().forEach(change => {
           if (change.type === "added") {
-            console.log("📥 Receiver ICE candidate received");
-            const candidate = new RTCIceCandidate(change.doc.data());
-            pc.addIceCandidate(candidate);
+            pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
           }
         });
       });
