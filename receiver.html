@@ -28,27 +28,40 @@
 
     document.getElementById("startBtn").addEventListener("click", async () => {
       document.getElementById("startBtn").disabled = true;
-      await init(); // call init function
+      await init();
     });
 
     async function init() {
-      // 🔹 Get latest active call automatically
       const currentCallDoc = db.collection("currentCall").doc("active");
       const data = (await currentCallDoc.get()).data();
-      if (!data) {
-        alert("❌ No active sender found");
-        return;
-      }
+      if (!data) { alert("❌ No active sender found"); return; }
       const callId = data.callId;
       console.log("📡 Connecting to Call ID:", callId);
 
-      const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          {
+            urls: [
+              "stun:openrelay.metered.ca:80",
+              "stun:openrelay.metered.ca:443",
+              "stun:openrelay.metered.ca:3478",
+              "turn:openrelay.metered.ca:80",
+              "turn:openrelay.metered.ca:443",
+              "turn:openrelay.metered.ca:3478"
+            ],
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          }
+        ]
+      });
+
       const remoteVideo = document.getElementById("remoteVideo");
 
       pc.ontrack = event => {
         console.log("🎥 Remote stream received");
         remoteVideo.srcObject = event.streams[0];
-        remoteVideo.muted = true; // mute to allow autoplay
+        remoteVideo.muted = true;
         remoteVideo.onloadedmetadata = () => remoteVideo.play();
       };
 
@@ -60,36 +73,22 @@
         if (event.candidate) answerCandidates.add(event.candidate.toJSON());
       };
 
-      // 🔹 Get offer from Firestore
       const callData = (await callDoc.get()).data();
-      if (!callData) {
-        alert("❌ Invalid call data");
-        return;
-      }
+      if (!callData) { alert("❌ Invalid call data"); return; }
 
-      const offerDescription = callData.offer;
-      await pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
+      await pc.setRemoteDescription(new RTCSessionDescription(callData.offer));
       console.log("✅ Offer received");
 
-      // 🔹 Create answer
       const answerDescription = await pc.createAnswer();
       await pc.setLocalDescription(answerDescription);
 
-      const answer = {
-        type: answerDescription.type,
-        sdp: answerDescription.sdp
-      };
-
+      const answer = { type: answerDescription.type, sdp: answerDescription.sdp };
       await callDoc.update({ answer });
       console.log("✅ Answer stored");
 
-      // 🔹 Listen for ICE candidates from sender
       offerCandidates.onSnapshot(snapshot => {
         snapshot.docChanges().forEach(change => {
-          if (change.type === "added") {
-            pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
-            console.log("📥 Sender ICE candidate added");
-          }
+          if (change.type === "added") pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
         });
       });
     }
