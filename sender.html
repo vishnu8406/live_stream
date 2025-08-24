@@ -1,16 +1,16 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Camera Receiver</title>
+  <title>Camera Sender</title>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
-  <h2>Camera Receiver</h2>
-  <video id="remoteVideo" autoplay playsinline style="width: 100%; border: 2px solid black;"></video>
+  <h2>Camera Sender</h2>
+  <video id="video" autoplay playsinline style="width: 100%; border: 2px solid black;"></video>
 
   <script>
-    console.log("Receiver page loaded");
+    console.log("📡 Sender page loaded");
 
     // 🔹 Firebase config
     const firebaseConfig = {
@@ -28,62 +28,54 @@
     const db = firebase.firestore();
 
     async function init() {
-      const remoteVideo = document.getElementById("remoteVideo");
+      const localVideo = document.getElementById("video");
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      localVideo.srcObject = stream;
+      console.log("🎥 Camera stream started");
 
-      console.log("📡 Creating PeerConnection...");
       const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-      pc.ontrack = event => {
-        console.log("🎥 Remote track received:", event.streams);
-        remoteVideo.srcObject = event.streams[0];
-      };
-
-      // Ask for Call ID
-      const callId = prompt("Enter Call ID from Sender:");
-      console.log("👉 Call ID entered:", callId);
-
-      const callDoc = db.collection("calls").doc(callId);
+      const callDoc = db.collection("calls").doc();
       const offerCandidates = callDoc.collection("offerCandidates");
       const answerCandidates = callDoc.collection("answerCandidates");
 
       pc.onicecandidate = event => {
         if (event.candidate) {
-          console.log("📨 Sending ICE candidate to Firestore...");
-          answerCandidates.add(event.candidate.toJSON());
+          console.log("📨 New ICE candidate sent");
+          offerCandidates.add(event.candidate.toJSON());
         }
       };
 
-      console.log("📄 Fetching call data from Firestore...");
-      const callData = (await callDoc.get()).data();
+      console.log("⚙️ Creating offer...");
+      const offerDescription = await pc.createOffer();
+      await pc.setLocalDescription(offerDescription);
 
-      if (!callData) {
-        console.error("❌ No such Call ID found in Firestore!");
-        alert("Invalid Call ID");
-        return;
-      }
-
-      console.log("✅ Offer received:", callData.offer);
-      await pc.setRemoteDescription(new RTCSessionDescription(callData.offer));
-
-      console.log("⚙️ Creating Answer...");
-      const answerDescription = await pc.createAnswer();
-      await pc.setLocalDescription(answerDescription);
-
-      const answer = {
-        type: answerDescription.type,
-        sdp: answerDescription.sdp,
+      const offer = {
+        sdp: offerDescription.sdp,
+        type: offerDescription.type,
       };
 
-      console.log("📨 Writing answer to Firestore...");
-      await callDoc.update({ answer });
+      console.log("📨 Writing offer to Firestore...");
+      await callDoc.set({ offer });
+      console.log("✅ Offer stored with Call ID:", callDoc.id);
+      alert("Share this Call ID with Receiver: " + callDoc.id);
 
-      console.log("👂 Listening for offer ICE candidates...");
-      offerCandidates.onSnapshot(snapshot => {
+      callDoc.onSnapshot(snapshot => {
+        const data = snapshot.data();
+        if (!pc.currentRemoteDescription && data?.answer) {
+          console.log("📥 Answer received from receiver");
+          const answerDescription = new RTCSessionDescription(data.answer);
+          pc.setRemoteDescription(answerDescription);
+        }
+      });
+
+      answerCandidates.onSnapshot(snapshot => {
         snapshot.docChanges().forEach(change => {
           if (change.type === "added") {
-            let data = change.doc.data();
-            console.log("📥 New ICE candidate from sender:", data);
-            pc.addIceCandidate(new RTCIceCandidate(data));
+            console.log("📥 Answer ICE candidate received");
+            const candidate = new RTCIceCandidate(change.doc.data());
+            pc.addIceCandidate(candidate);
           }
         });
       });
