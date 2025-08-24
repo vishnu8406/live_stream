@@ -6,19 +6,15 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
-  <h2>💻 Camera Receiver</h2>
-  <input id="callId" placeholder="Enter Call ID" style="width:250px; padding:5px;">
-  <button onclick="init()">Start</button>
-  <video id="remoteVideo" autoplay playsinline style="width:100%; border:2px solid blue;"></video>
+  <h2>💻 Camera Receiver (Auto)</h2>
+  <video id="remoteVideo" autoplay playsinline style="width:100%; height:480px; border:2px solid blue;"></video>
 
   <script>
     console.log("💻 Receiver page loaded");
 
-    // 🔹 Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyBbOZTdTJWhqApJGDeep5gSRXHUbMOZ8_E",
       authDomain: "live-stream-b4723.firebaseapp.com",
-      databaseURL: "https://live-stream-b4723-default-rtdb.firebaseio.com",
       projectId: "live-stream-b4723",
       storageBucket: "live-stream-b4723.appspot.com",
       messagingSenderId: "924150539091",
@@ -30,12 +26,14 @@
     const db = firebase.firestore();
 
     async function init() {
-      const callId = document.getElementById("callId").value.trim();
-      if (!callId) {
-        alert("⚠️ Please enter a Call ID");
+      const currentCallDoc = db.collection("currentCall").doc("active");
+      const data = (await currentCallDoc.get()).data();
+      if (!data) {
+        alert("❌ No active sender found");
         return;
       }
-      console.log("📡 Receiver connecting with Call ID:", callId);
+      const callId = data.callId;
+      console.log("📡 Connecting to Call ID:", callId);
 
       const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
       const remoteVideo = document.getElementById("remoteVideo");
@@ -43,6 +41,7 @@
       pc.ontrack = event => {
         console.log("🎥 Remote stream received");
         remoteVideo.srcObject = event.streams[0];
+        remoteVideo.onloadedmetadata = () => remoteVideo.play();
       };
 
       const callDoc = db.collection("calls").doc(callId);
@@ -50,43 +49,32 @@
       const answerCandidates = callDoc.collection("answerCandidates");
 
       pc.onicecandidate = event => {
-        if (event.candidate) {
-          console.log("📨 Receiver ICE candidate sent");
-          answerCandidates.add(event.candidate.toJSON());
-        }
+        if (event.candidate) answerCandidates.add(event.candidate.toJSON());
       };
 
       const callData = (await callDoc.get()).data();
       if (!callData) {
-        alert("❌ Invalid Call ID");
+        alert("❌ Invalid call data");
         return;
       }
 
-      console.log("✅ Offer received");
       const offerDescription = callData.offer;
       await pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
 
       const answerDescription = await pc.createAnswer();
       await pc.setLocalDescription(answerDescription);
 
-      const answer = {
-        type: answerDescription.type,
-        sdp: answerDescription.sdp,
-      };
-
       await callDoc.update({ answer });
       console.log("✅ Answer stored");
 
       offerCandidates.onSnapshot(snapshot => {
         snapshot.docChanges().forEach(change => {
-          if (change.type === "added") {
-            console.log("📥 Sender ICE candidate received");
-            const candidate = new RTCIceCandidate(change.doc.data());
-            pc.addIceCandidate(candidate);
-          }
+          if (change.type === "added") pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
         });
       });
     }
+
+    init();
   </script>
 </body>
 </html>
