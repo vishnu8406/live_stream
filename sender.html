@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Camera Sender</title>
+</head>
+<body>
+  <h2>📱 Camera Sender</h2>
+  <video id="localVideo" autoplay playsinline muted></video>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+
+  <script>
+    // TODO: Replace with your Firebase config
+    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyBbOZTdTJWhqApJGDeep5gSRXHUbMOZ8_E",
+  authDomain: "live-stream-b4723.firebaseapp.com",
+  databaseURL: "https://live-stream-b4723-default-rtdb.firebaseio.com",
+  projectId: "live-stream-b4723",
+  storageBucket: "live-stream-b4723.firebasestorage.app",
+  messagingSenderId: "924150539091",
+  appId: "1:924150539091:web:e4b23806165e39b3f437a6",
+  measurementId: "G-QYJ816DFZH"
+};
+
+    // Initialize Firebase
+    const app = firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const roomId = "room1"; // static room for testing
+    const localVideo = document.getElementById('localVideo');
+    let pc = new RTCPeerConnection();
+
+    // Capture camera
+    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      .then(stream => {
+        localVideo.srcObject = stream;
+        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      });
+
+    // Send ICE candidates to Firebase
+    pc.onicecandidate = event => {
+      if (event.candidate) {
+        db.ref("rooms/" + roomId + "/caller/candidates").push(event.candidate.toJSON());
+      }
+    };
+
+    // Create Offer
+    async function createOffer() {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      db.ref("rooms/" + roomId + "/offer").set(offer);
+    }
+
+    createOffer();
+
+    // Listen for Answer
+    db.ref("rooms/" + roomId + "/answer").on("value", async snapshot => {
+      const answer = snapshot.val();
+      if (answer && !pc.currentRemoteDescription) {
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      }
+    });
+
+    // Listen for Answer ICE candidates
+    db.ref("rooms/" + roomId + "/callee/candidates").on("child_added", snapshot => {
+      const candidate = snapshot.val();
+      pc.addIceCandidate(new RTCIceCandidate(candidate));
+    });
+  </script>
+</body>
+</html>
