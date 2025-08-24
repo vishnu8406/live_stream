@@ -1,22 +1,22 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Camera Sender</title>
-  <!-- Firebase SDKs -->
+  <title>Camera Receiver</title>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
-  <h2>Camera Sender</h2>
-  <video id="video" autoplay playsinline></video>
+  <h2>Camera Receiver</h2>
+  <video id="remoteVideo" autoplay playsinline style="width: 100%; border: 2px solid black;"></video>
 
   <script>
-    alert("📌 Sender page loaded"); // Debug 1
+    console.log("Receiver page loaded");
 
-    // 🔹 Firebase configuration
+    // 🔹 Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyBbOZTdTJWhqApJGDeep5gSRXHUbMOZ8_E",
       authDomain: "live-stream-b4723.firebaseapp.com",
+      databaseURL: "https://live-stream-b4723-default-rtdb.firebaseio.com",
       projectId: "live-stream-b4723",
       storageBucket: "live-stream-b4723.appspot.com",
       messagingSenderId: "924150539091",
@@ -24,51 +24,72 @@
       measurementId: "G-QYJ816DFZH"
     };
 
-    try {
-      firebase.initializeApp(firebaseConfig);
-      const db = firebase.firestore();
-      alert("✅ Firebase initialized"); // Debug 2
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
-      async function init() {
-        try {
-          // Get camera
-          const localVideo = document.getElementById("video");
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          localVideo.srcObject = stream;
-          alert("📷 Camera started"); // Debug 3
+    async function init() {
+      const remoteVideo = document.getElementById("remoteVideo");
 
-          // Peer connection
-          const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
-          stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      console.log("📡 Creating PeerConnection...");
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
 
-          // Firestore call document
-          const callDoc = db.collection("calls").doc();
-          alert("📝 Firestore doc created: " + callDoc.id); // Debug 4
+      pc.ontrack = event => {
+        console.log("🎥 Remote track received:", event.streams);
+        remoteVideo.srcObject = event.streams[0];
+      };
 
-          const offerCandidates = callDoc.collection("offerCandidates");
-          const answerCandidates = callDoc.collection("answerCandidates");
+      // Ask for Call ID
+      const callId = prompt("Enter Call ID from Sender:");
+      console.log("👉 Call ID entered:", callId);
 
-          pc.onicecandidate = event => {
-            if (event.candidate) {
-              offerCandidates.add(event.candidate.toJSON());
-            }
-          };
+      const callDoc = db.collection("calls").doc(callId);
+      const offerCandidates = callDoc.collection("offerCandidates");
+      const answerCandidates = callDoc.collection("answerCandidates");
 
-          // Create and set offer
-          const offerDescription = await pc.createOffer();
-          await pc.setLocalDescription(offerDescription);
-
-          await callDoc.set({ offer: { sdp: offerDescription.sdp, type: offerDescription.type } });
-          alert("📌 Share this Call ID with Receiver:\n\n" + callDoc.id); // Debug 5
-        } catch (err) {
-          alert("❌ Error inside init(): " + err.message);
+      pc.onicecandidate = event => {
+        if (event.candidate) {
+          console.log("📨 Sending ICE candidate to Firestore...");
+          answerCandidates.add(event.candidate.toJSON());
         }
+      };
+
+      console.log("📄 Fetching call data from Firestore...");
+      const callData = (await callDoc.get()).data();
+
+      if (!callData) {
+        console.error("❌ No such Call ID found in Firestore!");
+        alert("Invalid Call ID");
+        return;
       }
 
-      init();
-    } catch (err) {
-      alert("❌ Firebase error: " + err.message);
+      console.log("✅ Offer received:", callData.offer);
+      await pc.setRemoteDescription(new RTCSessionDescription(callData.offer));
+
+      console.log("⚙️ Creating Answer...");
+      const answerDescription = await pc.createAnswer();
+      await pc.setLocalDescription(answerDescription);
+
+      const answer = {
+        type: answerDescription.type,
+        sdp: answerDescription.sdp,
+      };
+
+      console.log("📨 Writing answer to Firestore...");
+      await callDoc.update({ answer });
+
+      console.log("👂 Listening for offer ICE candidates...");
+      offerCandidates.onSnapshot(snapshot => {
+        snapshot.docChanges().forEach(change => {
+          if (change.type === "added") {
+            let data = change.doc.data();
+            console.log("📥 New ICE candidate from sender:", data);
+            pc.addIceCandidate(new RTCIceCandidate(data));
+          }
+        });
+      });
     }
+
+    init();
   </script>
 </body>
 </html>
