@@ -26,6 +26,7 @@
     const db = firebase.firestore();
 
     async function init() {
+      // 🔹 Get latest active call automatically
       const currentCallDoc = db.collection("currentCall").doc("active");
       const data = (await currentCallDoc.get()).data();
       if (!data) {
@@ -52,6 +53,7 @@
         if (event.candidate) answerCandidates.add(event.candidate.toJSON());
       };
 
+      // 🔹 Get offer from Firestore
       const callData = (await callDoc.get()).data();
       if (!callData) {
         alert("❌ Invalid call data");
@@ -60,16 +62,27 @@
 
       const offerDescription = callData.offer;
       await pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
+      console.log("✅ Offer received");
 
+      // 🔹 Create answer
       const answerDescription = await pc.createAnswer();
       await pc.setLocalDescription(answerDescription);
+
+      const answer = {
+        type: answerDescription.type,
+        sdp: answerDescription.sdp
+      };
 
       await callDoc.update({ answer });
       console.log("✅ Answer stored");
 
+      // 🔹 Listen for ICE candidates from sender
       offerCandidates.onSnapshot(snapshot => {
         snapshot.docChanges().forEach(change => {
-          if (change.type === "added") pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+          if (change.type === "added") {
+            pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+            console.log("📥 Sender ICE candidate added");
+          }
         });
       });
     }
