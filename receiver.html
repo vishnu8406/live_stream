@@ -7,44 +7,40 @@
 </head>
 <body>
   <h2>Camera Receiver</h2>
-  <input id="callId" placeholder="Enter Call ID">
-  <button onclick="joinCall()">Join</button>
   <video id="remoteVideo" autoplay playsinline></video>
 
   <script>
     console.log("Receiver page loaded");
 
-    // 🔹 Your Firebase config here (same as sender)
-    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyBbOZTdTJWhqApJGDeep5gSRXHUbMOZ8_E",
-  authDomain: "live-stream-b4723.firebaseapp.com",
-  databaseURL: "https://live-stream-b4723-default-rtdb.firebaseio.com",
-  projectId: "live-stream-b4723",
-  storageBucket: "live-stream-b4723.firebasestorage.app",
-  messagingSenderId: "924150539091",
-  appId: "1:924150539091:web:e4b23806165e39b3f437a6",
-  measurementId: "G-QYJ816DFZH"
-};
+    // 🔹 Your Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyBbOZTdTJWhqApJGDeep5gSRXHUbMOZ8_E",
+      authDomain: "live-stream-b4723.firebaseapp.com",
+      databaseURL: "https://live-stream-b4723-default-rtdb.firebaseio.com",
+      projectId: "live-stream-b4723",
+      storageBucket: "live-stream-b4723.appspot.com",
+      messagingSenderId: "924150539091",
+      appId: "1:924150539091:web:e4b23806165e39b3f437a6",
+      measurementId: "G-QYJ816DFZH"
+    };
 
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
-    async function joinCall() {
-      const callId = document.getElementById("callId").value;
-      const callDoc = db.collection("calls").doc(callId);
-      const answerCandidates = callDoc.collection("answerCandidates");
-      const offerCandidates = callDoc.collection("offerCandidates");
+    async function init() {
+      const remoteVideo = document.getElementById("remoteVideo");
 
       const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
-      const remoteStream = new MediaStream();
-      document.getElementById("remoteVideo").srcObject = remoteStream;
 
       pc.ontrack = event => {
-        event.streams[0].getTracks().forEach(track => {
-          remoteStream.addTrack(track);
-        });
+        remoteVideo.srcObject = event.streams[0];
       };
+
+      // 🔹 Ask for Call ID
+      const callId = prompt("Enter Call ID from Sender:");
+      const callDoc = db.collection("calls").doc(callId);
+      const offerCandidates = callDoc.collection("offerCandidates");
+      const answerCandidates = callDoc.collection("answerCandidates");
 
       pc.onicecandidate = event => {
         if (event.candidate) {
@@ -53,6 +49,7 @@ const firebaseConfig = {
       };
 
       const callData = (await callDoc.get()).data();
+
       const offerDescription = callData.offer;
       await pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
 
@@ -69,14 +66,14 @@ const firebaseConfig = {
       offerCandidates.onSnapshot(snapshot => {
         snapshot.docChanges().forEach(change => {
           if (change.type === "added") {
-            const data = change.doc.data();
+            let data = change.doc.data();
             pc.addIceCandidate(new RTCIceCandidate(data));
           }
         });
       });
-
-      console.log("Receiver joined call:", callId);
     }
+
+    init();
   </script>
 </body>
 </html>
