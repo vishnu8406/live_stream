@@ -6,8 +6,8 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
-  <h2>Camera Sender</h2>
-  <video id="video" autoplay playsinline style="width: 100%; border: 2px solid black;"></video>
+  <h2>📱 Camera Sender</h2>
+  <video id="video" autoplay playsinline style="width:100%; border:2px solid black;"></video>
 
   <script>
     console.log("📡 Sender page loaded");
@@ -42,7 +42,7 @@
 
       pc.onicecandidate = event => {
         if (event.candidate) {
-          console.log("📨 New ICE candidate sent");
+          console.log("📨 Sender ICE candidate sent");
           offerCandidates.add(event.candidate.toJSON());
         }
       };
@@ -56,10 +56,9 @@
         type: offerDescription.type,
       };
 
-      console.log("📨 Writing offer to Firestore...");
       await callDoc.set({ offer });
       console.log("✅ Offer stored with Call ID:", callDoc.id);
-      alert("Share this Call ID with Receiver: " + callDoc.id);
+      alert("📢 Share this Call ID with Receiver:\n" + callDoc.id);
 
       callDoc.onSnapshot(snapshot => {
         const data = snapshot.data();
@@ -73,7 +72,7 @@
       answerCandidates.onSnapshot(snapshot => {
         snapshot.docChanges().forEach(change => {
           if (change.type === "added") {
-            console.log("📥 Answer ICE candidate received");
+            console.log("📥 Receiver ICE candidate received");
             const candidate = new RTCIceCandidate(change.doc.data());
             pc.addIceCandidate(candidate);
           }
